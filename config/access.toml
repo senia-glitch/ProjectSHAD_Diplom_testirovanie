@@ -1,0 +1,20 @@
+# Единая политика: роль -> разрешённые внешние сценарии.
+# Роль определяется сервером по JWT; без токена — guest.
+
+[roles.guest]
+scenarios = ["auth.register", "auth.login", "service.health", "service.ready"]
+
+[roles.teacher]
+scenarios = [
+  "auth.me", "service.health", "service.ready",
+  "tests.create", "tests.update", "tests.delete", "tests.list_own", "tests.get_own",
+  "students.list", "access.list", "access.set",
+  "results.list_for_test", "results.get_for_teacher", "results.review",
+]
+
+[roles.student]
+scenarios = [
+  "auth.me", "service.health", "service.ready",
+  "tests.list_available", "tests.open", "attempts.submit",
+  "results.list_mine", "results.get_mine",
+]

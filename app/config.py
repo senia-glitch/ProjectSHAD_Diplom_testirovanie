@@ -7,6 +7,8 @@ from sqlalchemy import URL
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / '.env', override=False)
 os.environ['CORE_SKIP_DOTENV'] = '1'
+# Сессия должна пережить прохождение длинного теста.
+os.environ.setdefault('CORE_ACCESS_TOKEN_MINUTES', '720')
 
 
 def database_name(test=False):

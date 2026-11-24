@@ -5,13 +5,19 @@ from fastbase import make_app, start
 from fastapi.staticfiles import StaticFiles
 from run_infrastructure import start_infrastructure
 
+EXPECTED_SCENARIOS = (
+    'users.register,users.login,users.get,users.list_students,'
+    'tests.create,tests.update,tests.delete,tests.get_owned,tests.list_owned,tests.list_available,tests.get_for_student,'
+    'access.list,access.set,attempts.submit,attempts.list_mine,attempts.get_mine,attempts.list_for_test,'
+    'attempts.get_for_teacher,attempts.review,system.ping')
+
 
 @asynccontextmanager
 async def lifespan(app):
     router = await start_infrastructure()
     try:
         await start_core(router=router, discover='app.scenarios')
-        expected = set('notes.create,notes.get,notes.list,notes.delete'.split(','))
+        expected = set(EXPECTED_SCENARIOS.split(','))
         if not expected.issubset(set(ScenarioRegistry.list_scenarios())):
             raise RuntimeError('Required scenarios were not discovered')
         yield
