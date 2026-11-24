@@ -65,6 +65,38 @@ function toast(message, kind = '') {
   setTimeout(() => t.remove(), kind === 'error' ? 6000 : 3500);
 }
 
+/* ---------- диалоги в стиле интерфейса (вместо системных confirm/prompt) ---------- */
+function openDialog({ title, message, input = null, okText = 'Подтвердить', cancelText = 'Отмена', danger = false }) {
+  return new Promise((resolve) => {
+    const field = input ? el('input', { type: 'text', value: input.value || '', placeholder: input.placeholder || '', 'aria-label': title }) : null;
+    const err = el('p', { class: 'error-text', role: 'alert' });
+    const dlg = el('dialog', { class: 'dlg', 'aria-labelledby': 'dlg-title' });
+    let done = false;
+    const close = (value) => { if (done) return; done = true; dlg.close(); dlg.remove(); resolve(value); };
+    const ok = el('button', { type: 'submit', class: `btn ${danger ? 'danger' : 'primary'}`, text: okText });
+    const form = el('form', { method: 'dialog', class: 'stack-sm', onsubmit: (e) => {
+      e.preventDefault();
+      if (!field) { close(true); return; }
+      const v = field.value.trim();
+      const problem = input.validate?.(v);
+      if (problem) { err.textContent = problem; field.focus(); return; }
+      close(v || null);
+    } },
+      el('h2', { id: 'dlg-title', text: title }),
+      message ? el('p', { class: 'muted pre', text: message }) : null,
+      field, err,
+      el('div', { class: 'row dlg-actions' }, el('button', { type: 'button', class: 'btn ghost', text: cancelText, onclick: () => close(field ? null : false) }), ok));
+    dlg.append(form);
+    dlg.addEventListener('cancel', (e) => { e.preventDefault(); close(field ? null : false); });
+    dlg.addEventListener('click', (e) => { if (e.target === dlg) close(field ? null : false); });
+    document.body.append(dlg);
+    dlg.showModal();
+    (field || ok).focus();
+  });
+}
+const askConfirm = (title, message, opts = {}) => openDialog({ title, message, ...opts });
+const askText = (title, input, opts = {}) => openDialog({ title, input, okText: 'Вставить', ...opts });
+
 /* ---------- API ---------- */
 const auth = {
   get token() { try { return localStorage.getItem('token') || ''; } catch { return ''; } },
@@ -74,6 +106,23 @@ const auth = {
 
 class ApiError extends Error {
   constructor(message, status) { super(message); this.status = status; }
+}
+
+/* Перевод ошибок проверки сервера в понятный русский текст. */
+const FIELD_NAMES = { title: 'название', description: 'описание', tasks: 'задания', prompt: 'вопрос', username: 'логин', password: 'пароль',
+  full_name: 'имя', role: 'роль', good_percent: 'порог «хорошо»', excellent_percent: 'порог «замечательно»', teacher_comment: 'комментарий', teacher_grade: 'оценка' };
+function humanizeError(d) {
+  const msg = String(d.msg || '');
+  if (msg.startsWith('Value error, ')) return msg.slice(13);
+  const key = [...(d.loc || [])].reverse().find(k => typeof k === 'string' && FIELD_NAMES[k]);
+  const name = key ? FIELD_NAMES[key] : 'поле';
+  if (/at least 1 (character|item)/.test(msg)) return `${name}: заполните`;
+  if (/at least (\d+) character/.test(msg)) return `${name}: не короче ${msg.match(/at least (\d+)/)[1]} символов`;
+  if (/at most (\d+)/.test(msg)) return `${name}: не длиннее ${msg.match(/at most (\d+)/)[1]}`;
+  if (/should match pattern/.test(msg)) return `${name}: недопустимые символы`;
+  if (/greater than or equal|less than or equal/.test(msg)) return `${name}: значение вне допустимого диапазона`;
+  if (/Input should be/.test(msg)) return `${name}: недопустимое значение`;
+  return `${name}: некорректное значение`;
 }
 
 async function api(path, { method = 'GET', body } = {}) {
@@ -92,7 +141,7 @@ async function api(path, { method = 'GET', body } = {}) {
   if (!response.ok) {
     let message = data?.error?.message || 'Запрос не выполнен';
     if (response.status === 422 && Array.isArray(data?.error?.details) && message === 'Validation failed') {
-      message = 'Проверьте поля: ' + data.error.details.map(d => (d.msg || '').replace(/^Value error, /, '')).filter(Boolean).slice(0, 3).join('; ');
+      message = 'Проверьте поля: ' + data.error.details.map(humanizeError).filter(Boolean).slice(0, 3).join('; ');
     }
     if (response.status === 401 && auth.token) { auth.token = ''; auth.user = null; setTimeout(() => (location.hash = '#/login'), 0); }
     throw new ApiError(message, response.status);

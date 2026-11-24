@@ -46,10 +46,16 @@ const ROUTES = [
   [/^\/my-results$/, pageMyResults, 'student'], [/^\/my-results\/(\d+)$/, pageMyResult, 'student'],
 ];
 
+let currentRoute = null, skipGuard = false;
 async function router() {
   const route = (location.hash || '#/').slice(1);
-  if (leaveGuard && leaveGuard() && !confirm(leaveGuard())) { history.back(); return; }
+  if (skipGuard) { skipGuard = false; return; }
+  if (leaveGuard && leaveGuard() && currentRoute !== null && route !== currentRoute) {
+    const leave = await askConfirm('Уйти со страницы?', leaveGuard(), { okText: 'Уйти', danger: true, cancelText: 'Остаться' });
+    if (!leave) { skipGuard = true; location.hash = '#' + currentRoute; return; }
+  }
   leaveGuard = null;
+  currentRoute = route;
   if (auth.token && !auth.user) {
     try { auth.user = await api('/auth/me'); } catch { auth.token = ''; }
   }
@@ -140,7 +146,7 @@ async function pageTeacherTests() {
   return el('div', {}, head('Мои тесты', 'Создавайте тесты и выдавайте доступ ученикам', add),
     el('div', { class: 'cards' }, items.map(t => el('article', { class: 'tcard' },
       el('h2', {}, el('a', { class: 'card-link', href: `#/tests/${t.id}`, text: t.title })),
-      t.description ? el('p', { class: 'muted clamp2', text: t.description }) : null,
+      t.description ? el('p', { class: 'muted clamp2', text: markdownPlain(t.description) }) : null,
       el('div', { class: 'meta-row' },
         el('span', { text: `${t.task_count} ${plural(t.task_count, 'задание', 'задания', 'заданий')}` }),
         el('span', { text: `${fmtNum(t.max_points)} б. автопроверки` }),
@@ -171,7 +177,7 @@ async function pageTestEditor(id) {
     const tasks = cards.map(c => { try { return c.collect(); } catch { return {}; } });
     cards = tasks.map((t, i) => taskEditor(t, {
       index: i, total: tasks.length,
-      onRemove: () => { if (confirm('Удалить задание?')) { cards.splice(i, 1); draw(); } },
+      onRemove: async () => { if (await askConfirm('Удалить задание?', `Задание ${i + 1} будет удалено из теста после сохранения.`, { okText: 'Удалить', danger: true })) { cards.splice(i, 1); draw(); } },
       onMove: (d) => { const j = i + d; [cards[i], cards[j]] = [cards[j], cards[i]]; draw(); },
     }));
     list.replaceChildren(...cards.map(c => c.node), ...(cards.length ? [] : [empty('Добавьте первое задание')]));
@@ -186,7 +192,10 @@ async function pageTestEditor(id) {
     err.hidden = true;
     try {
       const body = collectAll();
-      if (id && !confirm('После изменения теста ученики перестанут видеть свои прежние результаты по нему. Сохранить?')) return;
+      const problem = !body.title.trim() ? 'Укажите название теста.' : !body.tasks.length ? 'Добавьте хотя бы одно задание.'
+        : body.tasks.findIndex(t => !String(t.prompt || '').trim()) >= 0 ? `Задание ${body.tasks.findIndex(t => !String(t.prompt || '').trim()) + 1}. Заполните вопрос.` : '';
+      if (problem) { err.textContent = problem; err.hidden = false; err.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
+      if (id && !(await askConfirm('Сохранить новую версию теста?', 'После изменения ученики перестанут видеть свои прежние результаты по этому тесту.', { okText: 'Сохранить' }))) return;
       const saved = await api(id ? `/teacher/tests/${id}` : '/teacher/tests', { method: id ? 'PUT' : 'POST', body });
       snapshot = JSON.stringify(collectAll());
       leaveGuard = null;
@@ -231,7 +240,7 @@ async function pageTestOverview(id) {
   };
   const del = el('button', { type: 'button', class: 'btn danger' }, icon('trash'), 'Удалить тест');
   del.onclick = () => busy(del, async () => {
-    if (!confirm(`Удалить тест «${test.title}»? Все результаты по нему будут удалены безвозвратно.`)) return;
+    if (!(await askConfirm(`Удалить тест «${test.title}»?`, 'Все результаты по нему будут удалены безвозвратно.', { okText: 'Удалить', danger: true }))) return;
     try { await api(`/teacher/tests/${id}`, { method: 'DELETE' }); toast('Тест удалён', 'ok'); location.hash = '#/tests'; } catch (error) { toast(error.message, 'error'); }
   });
   return el('div', { class: 'stack' },
@@ -308,11 +317,11 @@ async function pageAvailable() {
   return el('div', {}, head('Тесты', 'Тесты, к которым у вас есть доступ'),
     el('div', { class: 'cards' }, items.map(t => el('article', { class: 'tcard' },
       el('h2', {}, el('a', { class: 'card-link', href: `#/take/${t.id}`, text: t.title })),
-      t.description ? el('p', { class: 'muted clamp2', text: t.description }) : null,
+      t.description ? el('p', { class: 'muted clamp2', text: markdownPlain(t.description) }) : null,
       el('div', { class: 'meta-row' }, el('span', { text: `${t.task_count} ${plural(t.task_count, 'задание', 'задания', 'заданий')}` }),
         t.my_attempts ? el('span', { text: `попыток: ${t.my_attempts}` }) : el('span', { text: 'ещё не проходили' }),
         t.my_attempts ? gradePill(t.my_last_grade, 'ждёт проверки') : null),
-      el('div', { class: 'card-actions' }, el('span', { class: 'btn small primary', text: t.my_attempts ? 'Пройти ещё раз' : 'Начать' }))))));
+      el('div', { class: 'card-actions' }, el('a', { class: 'btn small primary', href: `#/take/${t.id}`, text: t.my_attempts ? 'Пройти ещё раз' : 'Начать' }))))));
 }
 
 async function pageTake(id) {
@@ -331,7 +340,7 @@ async function pageTake(id) {
   const submit = el('button', { type: 'button', class: 'btn primary' }, icon('check'), 'Завершить тест');
   submit.onclick = () => busy(submit, async () => {
     const left = test.tasks.length - Object.keys(answers).filter(k => filled(answers[k])).length;
-    if (!confirm(left ? `Не отвечено заданий: ${left}. Завершить тест?` : 'Завершить тест и отправить ответы?')) return;
+    if (!(await askConfirm('Завершить тест?', left ? `Не отвечено заданий: ${left}. После отправки изменить ответы нельзя.` : 'После отправки изменить ответы нельзя.', { okText: 'Отправить ответы' }))) return;
     try {
       const res = await api(`/student/tests/${id}/attempts`, { method: 'POST', body: { version: test.version, answers } });
       dirty = false; leaveGuard = null;

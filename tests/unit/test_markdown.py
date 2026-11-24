@@ -24,6 +24,7 @@ CASES = {
     'bold': ('**жирный** и *курсив*', ['<strong>жирный</strong>', '<em>курсив</em>']),
     'link': ('[сайт](https://example.com/a_b_c)', ['href="https://example.com/a_b_c"', 'target="_blank"', 'rel="noopener noreferrer nofollow"']),
     'image': ('![схема](https://example.com/s_1.png)', ['<img class="md-media" src="https://example.com/s_1.png" alt="схема"']),
+    'youtube_after_text': ('См. видео:\nhttps://youtu.be/dQw4w9WgXcQ', ['<p>См. видео:</p>', 'youtube-nocookie.com/embed/dQw4w9WgXcQ']),
     'youtube': ('https://www.youtube.com/watch?v=dQw4w9WgXcQ', ['https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ', 'sandbox=']),
     'video': ('https://example.com/clip.mp4', ['<video class="md-media" controls']),
     'audio': ('https://example.com/a.mp3', ['<audio class="md-audio" controls']),
@@ -46,9 +47,11 @@ def test_markdown_renderer_output_and_safety():
     inputs = {k: v[0] for k, v in CASES.items()} | FORBIDDEN
     program = script + f'\nconst inputs = {json.dumps(inputs, ensure_ascii=False)};\n' \
         'const out = {}; for (const [k, v] of Object.entries(inputs)) out[k] = renderMarkdown(v);\n' \
+        'out.__plain = markdownPlain("### Тема\\nПроверочная по **планеты**. Материал: [статья](https://x.org/a_b)\\n![фото](https://x.org/m.jpg)\\nhttps://youtu.be/abcdefghijk");\n' \
         'process.stdout.write(JSON.stringify(out));'
     result = subprocess.run(['node', '-e', program], capture_output=True, text=True, encoding='utf-8', check=True)
     out = json.loads(result.stdout)
+    assert out.pop('__plain') == 'Тема Проверочная по планеты. Материал: статья фото'
     for key, (_, expected) in CASES.items():
         for fragment in expected:
             assert fragment in out[key], (key, out[key])

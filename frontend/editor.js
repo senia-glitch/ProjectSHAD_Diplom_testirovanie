@@ -20,11 +20,14 @@ function mdToolbar(area) {
     const a = area.selectionStart, start = area.value.lastIndexOf('\n', a - 1) + 1;
     area.setRangeText(prefix, start, start, 'end'); area.focus(); area.dispatchEvent(new Event('input', { bubbles: true }));
   };
-  const media = (label) => () => {
-    const url = prompt(`Ссылка на ${label} (https://…)`);
-    if (!url) return;
-    if (!/^https?:\/\//i.test(url.trim())) { toast('Ссылка должна начинаться с http:// или https://', 'error'); return; }
-    const a = area.selectionStart;
+  const media = (label) => async () => {
+    const a = area.selectionStart, end = area.selectionEnd;
+    const url = await askText(label === 'изображение' ? 'Изображение по ссылке' : 'Видео или аудио по ссылке', {
+      placeholder: 'https://…',
+      validate: (v) => (/^https?:\/\/\S+$/i.test(v) ? '' : 'Ссылка должна начинаться с http:// или https://'),
+    }, { message: label === 'изображение' ? 'Файл не загружается в систему — ученик увидит картинку по этой ссылке.' : 'YouTube, Vimeo, RuTube или прямая ссылка на mp4/webm/mp3. Файл не хранится в системе.' });
+    if (!url) { area.focus(); return; }
+    area.setSelectionRange(a, end);
     const text = (a && area.value[a - 1] !== '\n' ? '\n' : '') + (label === 'изображение' ? `![](${url.trim()})` : url.trim()) + '\n';
     area.setRangeText(text, a, area.selectionEnd, 'end'); area.focus(); area.dispatchEvent(new Event('input', { bubbles: true }));
   };

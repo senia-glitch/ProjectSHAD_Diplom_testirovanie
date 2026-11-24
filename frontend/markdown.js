@@ -39,7 +39,7 @@ function mdEmbed(href) {
 function mdMedia(href, alt = '') {
   const plain = mdUnescape(href);
   const embed = mdEmbed(href);
-  if (embed) return `<div class="md-video"><iframe src="${mdEscape(embed)}" title="${alt || 'Видео'}" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-presentation" allow="fullscreen; picture-in-picture" allowfullscreen></iframe></div>`;
+  if (embed) return `<div class="md-video"><iframe src="${mdEscape(embed)}" title="${alt || 'Видео'}" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" sandbox="allow-scripts allow-same-origin allow-presentation" allow="fullscreen; picture-in-picture" allowfullscreen></iframe></div>`;
   if (MD_VIDEO.test(plain)) return `<video class="md-media" controls preload="metadata" src="${href}"></video>`;
   if (MD_AUDIO.test(plain)) return `<audio class="md-audio" controls preload="none" src="${href}"></audio>`;
   return `<img class="md-media" src="${href}" alt="${alt}" loading="lazy" referrerpolicy="no-referrer">`;
@@ -68,6 +68,14 @@ function mdInline(text) {
   return s.replace(/\u0000(\d+)\u0000/g, (_, i) => codes[i]);
 }
 
+/* Строка целиком — ссылка на картинку/видео/аудио или поддерживаемый плеер. */
+function mdIsMediaLine(line) {
+  const m = line.trim().match(/^(https?:\/\/\S+)$/);
+  if (!m) return false;
+  const href = mdSafeUrl(m[1]), plain = mdUnescape(m[1]);
+  return !!href && !!(mdEmbed(href) || MD_IMAGE.test(plain) || MD_VIDEO.test(plain) || MD_AUDIO.test(plain));
+}
+
 function renderMarkdown(source) {
   const lines = mdEscape(String(source || '').replace(/\r\n?/g, '\n')).split('\n');
   const out = [];
@@ -89,11 +97,7 @@ function renderMarkdown(source) {
     if ((m = line.match(/^(#{1,4})\s+(.+)$/))) { out.push(`<h${m[1].length + 1}>${mdInline(m[2])}</h${m[1].length + 1}>`); i++; continue; }
     if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { out.push('<hr>'); i++; continue; }
     // ссылка на медиа отдельной строкой — встроить
-    if ((m = line.trim().match(/^(https?:\/\/\S+)$/))) {
-      const href = mdSafeUrl(m[1]);
-      const plain = mdUnescape(m[1]);
-      if (href && (mdEmbed(href) || MD_IMAGE.test(plain) || MD_VIDEO.test(plain) || MD_AUDIO.test(plain))) { out.push(mdMedia(href)); i++; continue; }
-    }
+    if (mdIsMediaLine(line)) { out.push(mdMedia(mdSafeUrl(line.trim()))); i++; continue; }
     if (/^&gt;\s?/.test(line)) {
       const quote = [];
       while (i < lines.length && /^&gt;\s?/.test(lines[i])) quote.push(lines[i++].replace(/^&gt;\s?/, ''));
@@ -121,7 +125,7 @@ function renderMarkdown(source) {
       continue;
     }
     const para = [];
-    while (i < lines.length && lines[i].trim() && !/^(#{1,4}\s|```|&gt;|\s*([-*+]|\d+[.)])\s+)/.test(lines[i])) para.push(lines[i++]);
+    while (i < lines.length && lines[i].trim() && !/^(#{1,4}\s|```|&gt;|\s*([-*+]|\d+[.)])\s+)/.test(lines[i]) && !(para.length && mdIsMediaLine(lines[i]))) para.push(lines[i++]);
     if (!para.length) para.push(lines[i++]);
     out.push(`<p>${para.map(mdInline).join('<br>')}</p>`);
   }
@@ -131,7 +135,27 @@ function renderMarkdown(source) {
 /* Вложенный рендер для цитат: строки уже экранированы. */
 function renderMarkdownEscaped(lines) { return renderMarkdown(lines.map(mdUnescape).join('\n')); }
 
+/* Краткий текст без разметки — для карточек и списков. */
+function markdownPlain(source) {
+  return String(source || '')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/^\s{0,3}(#{1,6}\s+|>\s?|[-*+]\s+|\d+[.)]\s+)/gm, '')
+    .replace(/(\*\*|__|~~|`)/g, '').replace(/(^|\W)[*_](\S[^*_]*?)[*_](?=\W|$)/g, '$1$2')
+    .replace(/https?:\/\/\S+/g, '').replace(/\s+/g, ' ').trim();
+}
+
 /* Элемент с отрендеренным Markdown (HTML собран только из экранированного текста). */
 function markdownBlock(source, cls = '') {
-  return el('div', { class: `prose md ${cls}`.trim(), html: renderMarkdown(source) });
+  const box = el('div', { class: `prose md ${cls}`.trim(), html: renderMarkdown(source) });
+  // Недоступное внешнее медиа заменяется понятной ссылкой вместо пустой рамки.
+  box.querySelectorAll('img.md-media, video.md-media, audio.md-audio').forEach((node) => {
+    node.addEventListener('error', () => {
+      const src = node.getAttribute('src');
+      node.replaceWith(el('a', { class: 'media-link', href: src, target: '_blank', rel: 'noopener noreferrer nofollow' },
+        el('span', {}, 'Не удалось загрузить медиа по ссылке', el('small', { text: src }))));
+    }, { once: true });
+  });
+  return box;
 }
