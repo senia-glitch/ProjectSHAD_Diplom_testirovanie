@@ -1,0 +1,13 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "testirovanie",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "app.main"],
+      "env": { "FAT_HOST": "127.0.0.1", "FAT_PORT": "18091" },
+      "port": 18091,
+      "autoPort": false
+    }
+  ]
+}
