@@ -9,7 +9,7 @@ from app.scenarios.tasks import TaskError, for_student, validate_tasks
 
 class TestInput(BaseModel):
     title: str = Field(min_length=1, max_length=200)
-    description: str = Field(default='', max_length=5000)
+    description: str = Field(default='', max_length=20000)  # Markdown
     tasks: list[dict[str, Any]] = Field(min_length=1, max_length=100)
     good_percent: int = Field(default=60, ge=1, le=100)
     excellent_percent: int = Field(default=85, ge=1, le=100)

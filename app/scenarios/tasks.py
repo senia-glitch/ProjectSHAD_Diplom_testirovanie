@@ -22,6 +22,7 @@ KINDS = {
 GRADES = ('удовлетворительно', 'хорошо', 'замечательно')
 MAX_TASKS = 100
 MAX_TEXT = 5000
+MAX_PROMPT = 20000  # Markdown-описание задания; медиа только по внешним ссылкам
 
 
 class TaskError(ValueError):
@@ -158,7 +159,7 @@ def validate_task(raw):
     task = {
         'id': str(raw.get('id') or uuid.uuid4().hex[:8])[:40],
         'kind': kind, 'variant': variant,
-        'prompt': _str(raw.get('prompt'), 'Вопрос'),
+        'prompt': _str(raw.get('prompt'), 'Вопрос', limit=MAX_PROMPT),
         'points': _number(raw.get('points') or 0, 'Баллы', minimum=0),
     }
     task['data'], task['answer'] = VALIDATORS[kind](variant, data, answer)

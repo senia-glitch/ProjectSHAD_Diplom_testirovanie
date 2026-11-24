@@ -159,7 +159,7 @@ function plural(n, one, few, many) {
 async function pageTestEditor(id) {
   const test = id ? await api(`/teacher/tests/${id}`) : { title: '', description: '', tasks: [], good_percent: 60, excellent_percent: 85 };
   const title = el('input', { type: 'text', maxlength: 200, value: test.title, required: true });
-  const description = el('textarea', { rows: 2, maxlength: 5000, value: test.description });
+  const description = el('textarea', { rows: 3, maxlength: 20000, value: test.description });
   const good = el('input', { type: 'number', min: 1, max: 99, value: test.good_percent });
   const excellent = el('input', { type: 'number', min: 2, max: 100, value: test.excellent_percent });
   const list = el('div', { class: 'stack' });
@@ -198,7 +198,7 @@ async function pageTestEditor(id) {
     head(id ? 'Редактирование теста' : 'Новый тест', id ? 'Сохранение создаёт новую версию теста' : 'Соберите тест из заданий разных типов',
       el('a', { class: 'btn ghost', href: id ? `#/tests/${id}` : '#/tests', text: 'Отмена' }), save),
     el('section', { class: 'form-card stack-sm' },
-      el('label', {}, 'Название', title), el('label', {}, 'Описание', description),
+      el('label', {}, 'Название', title), el('label', {}, 'Описание', mdToolbar(description), description, el('span', { class: 'hint', text: 'Поддерживается Markdown' })),
       el('div', { class: 'grid2' },
         el('label', {}, 'Порог «хорошо», %', good, el('span', { class: 'hint', text: 'Ниже — «удовлетворительно»' })),
         el('label', {}, 'Порог «замечательно», %', excellent)),
@@ -279,7 +279,7 @@ function attemptView(a, teacher) {
     return el('section', { class: 'task-card' },
       el('div', { class: 'task-head' }, el('span', { class: 'task-num', text: i + 1 }), el('div', { class: 'grow' }, el('div', { class: 'cap', text: `${KIND_NAMES[t.kind]} · ${VARIANT_NAMES[t.kind][t.variant]}` })),
         el('span', { class: `pill ${cls}`, text: label }), (t.graded ?? t.answer) && t.points ? el('span', { class: 'muted small nowrap', text: `${fmtNum(r.points)} / ${fmtNum(t.points)} б.` }) : null),
-      el('p', { class: 'task-prompt', text: t.prompt }),
+      markdownBlock(t.prompt, 'task-prompt'),
       renderTask(t, { value: given, readonly: true }),
       teacher ? el('p', { class: 'answer-key' }, el('span', { class: 'cap', text: 'Правильный ответ: ' }), describeAnswer(t)) : null);
   });
@@ -324,7 +324,7 @@ async function pageTake(id) {
   const cards = test.tasks.map((t, i) => el('section', { class: 'task-card' },
     el('div', { class: 'task-head' }, el('span', { class: 'task-num', text: i + 1 }), el('div', { class: 'grow' }, el('div', { class: 'cap', text: VARIANT_NAMES[t.kind][t.variant] })),
       t.graded && t.points ? el('span', { class: 'muted small nowrap', text: `${fmtNum(t.points)} б.` }) : null),
-    el('p', { class: 'task-prompt', text: t.prompt }),
+    markdownBlock(t.prompt, 'task-prompt'),
     renderTask(t, { onChange: (v) => { answers[t.id] = v; dirty = true; updateProgress(); } })));
   updateProgress();
   leaveGuard = () => (dirty ? 'Ответы не отправлены. Уйти со страницы?' : '');
@@ -339,7 +339,7 @@ async function pageTake(id) {
       location.hash = `#/my-results/${res.id}`;
     } catch (error) { toast(error.message, 'error'); }
   });
-  return el('div', { class: 'stack' }, head(test.title, test.description),
+  return el('div', { class: 'stack' }, head(test.title), test.description ? markdownBlock(test.description, 'test-desc') : '',
     ...cards, el('div', { class: 'submit-bar' }, progress, submit));
 }
 

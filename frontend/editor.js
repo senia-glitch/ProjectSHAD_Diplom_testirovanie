@@ -7,7 +7,37 @@ const alts = (text) => String(text || '').split('|').map(s => s.trim()).filter(B
 const field = (label, control, hint) => el('label', {}, label, control, hint ? el('span', { class: 'hint', text: hint }) : null);
 const ta = (value, rows = 4, extra = {}) => el('textarea', { rows, value: value ?? '', ...extra });
 const inp = (value, extra = {}) => el('input', { type: 'text', value: value ?? '', ...extra });
-const autoBox = (on, text = 'Проверять автоматически') => { const box = el('input', { type: 'checkbox', checked: on }); return { box, node: el('label', { class: 'check' }, box, text) }; };
+/* Панель вставки Markdown: оборачивает выделение или вставляет шаблон в позицию курсора. */
+function mdToolbar(area) {
+  const wrap = (before, after = before, placeholder = 'текст') => () => {
+    const { selectionStart: a, selectionEnd: b, value } = area;
+    const sel = value.slice(a, b) || placeholder;
+    area.setRangeText(before + sel + after, a, b, 'end');
+    area.setSelectionRange(a + before.length, a + before.length + sel.length);
+    area.focus(); area.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const line = (prefix) => () => {
+    const a = area.selectionStart, start = area.value.lastIndexOf('\n', a - 1) + 1;
+    area.setRangeText(prefix, start, start, 'end'); area.focus(); area.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const media = (label) => () => {
+    const url = prompt(`Ссылка на ${label} (https://…)`);
+    if (!url) return;
+    if (!/^https?:\/\//i.test(url.trim())) { toast('Ссылка должна начинаться с http:// или https://', 'error'); return; }
+    const a = area.selectionStart;
+    const text = (a && area.value[a - 1] !== '\n' ? '\n' : '') + (label === 'изображение' ? `![](${url.trim()})` : url.trim()) + '\n';
+    area.setRangeText(text, a, area.selectionEnd, 'end'); area.focus(); area.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const b = (labelHtml, tip, fn) => el('button', { type: 'button', class: 'rich-btn', 'aria-label': tip, title: tip, onmousedown: (e) => e.preventDefault(), onclick: fn }, el('span', { html: labelHtml }));
+  return el('div', { class: 'rich-bar md-bar' },
+    b('<b>Ж</b>', 'Жирный', wrap('**')), b('<i>К</i>', 'Курсив', wrap('*')), b('<s>З</s>', 'Зачёркнутый', wrap('~~')),
+    b('H', 'Заголовок', line('### ')), b('• —', 'Список', line('- ')), b('1.', 'Нумерованный список', line('1. ')),
+    b('❝', 'Цитата', line('> ')), b('&lt;/&gt;', 'Код', wrap('`')),
+    b('Ссылка', 'Ссылка', wrap('[', '](https://)', 'текст ссылки')),
+    b('Изобр.', 'Изображение по ссылке', media('изображение')), b('Видео', 'Видео или аудио по ссылке (YouTube, Vimeo, RuTube, mp4, mp3…)', media('видео или аудио')));
+}
+
+const autoBox =(on, text = 'Проверять автоматически') => { const box = el('input', { type: 'checkbox', checked: on }); return { box, node: el('label', { class: 'check' }, box, text) }; };
 
 /* ---------- 1. Выбор ---------- */
 function edChoice(variant, task) {
@@ -353,7 +383,7 @@ function taskEditor(task, { onRemove, onMove, index, total }) {
   const state = { kind: task.kind || 'choice', variant: task.variant || 'single', id: task.id };
   const kindSel = el('select', { 'aria-label': 'Тип задания' }, Object.entries(KIND_NAMES).map(([k, n]) => el('option', { value: k, text: n, selected: k === state.kind })));
   const varSel = el('select', { 'aria-label': 'Вариант задания' });
-  const prompt = ta(task.prompt, 2, { placeholder: 'Текст вопроса или инструкции' });
+  const prompt = ta(task.prompt, 3, { placeholder: 'Текст вопроса или инструкции. Поддерживается Markdown: **жирный**, *курсив*, [ссылка](https://…), ![](https://…/картинка.png)', maxlength: 20000 });
   const points = inp(task.points ?? 1, { inputmode: 'decimal', class: 'points' });
   const holder = el('div', { class: 'ed-specific' });
   const previewBox = el('div', { class: 'preview-box', hidden: true });
@@ -380,7 +410,7 @@ function taskEditor(task, { onRemove, onMove, index, total }) {
     const t = card.collect();
     const data = { ...t.data };
     if (t.kind === 'editing' && data.text) data.tokens = data.text.split(/\s+/).filter(Boolean);
-    previewBox.replaceChildren(el('div', { class: 'cap', text: 'Так задание увидит ученик' }), el('p', { class: 'task-prompt', text: t.prompt }), renderTask({ ...t, data }, {}));
+    previewBox.replaceChildren(el('div', { class: 'cap', text: 'Так задание увидит ученик' }), markdownBlock(t.prompt, 'task-prompt'), renderTask({ ...t, data }, {}));
     previewBox.hidden = false;
   };
   card.node = el('section', { class: 'task-card editor' },
@@ -391,7 +421,9 @@ function taskEditor(task, { onRemove, onMove, index, total }) {
         ibtn({ icon: 'up', tip: 'Выше', onclick: () => onMove(-1), disabled: index === 0 }),
         ibtn({ icon: 'down', tip: 'Ниже', onclick: () => onMove(1), disabled: index === total - 1 }),
         ibtn({ icon: 'trash', tip: 'Удалить задание', danger: true, onclick: onRemove }))),
-    el('div', { class: 'grid-prompt' }, field('Вопрос', prompt), field('Баллы', points, 'За верный ответ')),
+    el('div', { class: 'grid-prompt' },
+      el('label', {}, 'Вопрос', mdToolbar(prompt), prompt, el('span', { class: 'hint', text: 'Markdown; медиа подключаются по ссылкам и не хранятся в системе. Как это выглядит — в предпросмотре.' })),
+      field('Баллы', points, 'За верный ответ')),
     holder, previewBox);
   return card;
 }
